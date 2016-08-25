@@ -33,11 +33,9 @@ import java.nio.FloatBuffer;
 // getNinePatchChunk() returns the layout data specified in the NinePatch.
 //
 public class NinePatchTexture extends ResourceTexture {
-    @SuppressWarnings("unused")
-    private static final String TAG = "NinePatchTexture";
+
     private NinePatchChunk mChunk;
-    private SmallCache<NinePatchInstance> mInstanceCache
-            = new SmallCache<NinePatchInstance>();
+    private final SmallCache<NinePatchInstance> mInstanceCache = new SmallCache<>();
 
     public NinePatchTexture(Context context, int resId) {
         super(context, resId);
@@ -77,11 +75,12 @@ public class NinePatchTexture extends ResourceTexture {
     // This is a simple cache for a small number of things. Linear search
     // is used because the cache is small. It also tries to remove less used
     // item when the cache is full by moving the often-used items to the front.
+    @SuppressWarnings("unchecked")
     private static class SmallCache<V> {
         private static final int CACHE_SIZE = 16;
         private static final int CACHE_SIZE_START_MOVE = CACHE_SIZE / 2;
-        private int[] mKey = new int[CACHE_SIZE];
-        private V[] mValue = (V[]) new Object[CACHE_SIZE];
+        private final int[] mKey = new int[CACHE_SIZE];
+        private final V[] mValue = (V[]) new Object[CACHE_SIZE];
         private int mCount;  // number of items in this cache
 
         // Puts a value into the cache. If the cache is full, also returns
@@ -262,7 +261,7 @@ class NinePatchInstance {
      */
     private static int stretch(
             float x[], float u[], int div[], int source, int target) {
-        int textureSize = MathUtils.nextPowerOf2(source);
+        int textureSize = MathUtils.nextPow2(source);
         float textureBound = (float) source / textureSize;
 
         float stretch = 0;

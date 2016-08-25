@@ -18,7 +18,7 @@ package com.hippo.glview.glrenderer;
 
 import android.graphics.Bitmap;
 
-import com.hippo.yorozuya.AssertUtils;
+import junit.framework.Assert;
 
 // BitmapTexture is a texture whose content is specified by a fixed Bitmap.
 //
@@ -34,7 +34,7 @@ public class BitmapTexture extends UploadedTexture {
 
     public BitmapTexture(Bitmap bitmap, boolean hasBorder) {
         super(hasBorder);
-        AssertUtils.assertTrue(bitmap != null && !bitmap.isRecycled());
+        Assert.assertTrue(bitmap != null && !bitmap.isRecycled());
         mContentBitmap = bitmap;
     }
 

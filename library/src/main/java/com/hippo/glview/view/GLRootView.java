@@ -42,7 +42,8 @@ import com.hippo.glview.util.MotionEventHelper;
 import com.hippo.tuxiang.BestConfigChooser;
 import com.hippo.tuxiang.GLSurfaceView;
 import com.hippo.tuxiang.Renderer;
-import com.hippo.yorozuya.AssertUtils;
+
+import junit.framework.Assert;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -147,7 +148,7 @@ public class GLRootView extends GLSurfaceView
             Process.setThreadPriority(Process.THREAD_PRIORITY_DISPLAY);
             GalleryUtils.setRenderThread();
             GL11 gl = (GL11) gl1;
-            AssertUtils.assertTrue(mGL == gl);
+            Assert.assertTrue(mGL == gl);
 
             mCanvas.setSize(width, height);
         }

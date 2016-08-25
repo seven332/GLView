@@ -18,8 +18,6 @@ package com.hippo.glview.util;
 
 import android.graphics.Color;
 
-import com.hippo.yorozuya.AssertError;
-
 public class GalleryUtils {
 
     private static final String TAG = "GalleryUtils";
@@ -52,7 +50,7 @@ public class GalleryUtils {
 
     public static void assertInRenderThread() {
         if (sCurrentThread != Thread.currentThread()) {
-            throw new AssertError("Should not do this in render thread");
+            throw new AssertionError("Should not do this in render thread");
         }
     }
 }

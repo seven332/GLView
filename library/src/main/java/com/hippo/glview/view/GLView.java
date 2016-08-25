@@ -28,7 +28,8 @@ import android.view.MotionEvent;
 import com.hippo.glview.anim.CanvasAnimation;
 import com.hippo.glview.glrenderer.GLCanvas;
 import com.hippo.glview.glrenderer.GLPaint;
-import com.hippo.yorozuya.AssertUtils;
+
+import junit.framework.Assert;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -213,13 +214,13 @@ public class GLView implements TouchOwner {
 
     // This should only be called on the content pane (the topmost GLView).
     void attachToRoot(GLRoot root) {
-        AssertUtils.assertTrue(mParent == null && mRoot == null);
+        Assert.assertTrue(mParent == null && mRoot == null);
         onAttachToRoot(root);
     }
 
     // This should only be called on the content pane (the topmost GLView).
     void detachFromRoot() {
-        AssertUtils.assertTrue(mParent == null && mRoot != null);
+        Assert.assertTrue(mParent == null && mRoot != null);
         onDetachFromRoot();
     }
 
@@ -761,7 +762,7 @@ public class GLView implements TouchOwner {
     }
 
     public void getPositionInRoot(int[] position) {
-        AssertUtils.assertEquals("position should be 2 length int array", position.length, 2);
+        Assert.assertEquals("position should be 2 length int array", position.length, 2);
         position[0] = mPositionInRoot[0];
         position[1] = mPositionInRoot[1];
     }

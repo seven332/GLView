@@ -3,7 +3,7 @@ package com.hippo.glview.glrenderer;
 import android.graphics.Bitmap;
 import android.graphics.RectF;
 
-import com.hippo.yorozuya.AssertUtils;
+import junit.framework.Assert;
 
 public class SpriteTexture extends TiledTexture {
 
@@ -16,7 +16,7 @@ public class SpriteTexture extends TiledTexture {
     public SpriteTexture(Bitmap bitmap, boolean isOpaque, int count, int[] rects) {
         super(bitmap, isOpaque);
 
-        AssertUtils.assertEquals("rects.length must be count * 4", count * 4, rects.length);
+        Assert.assertEquals("rects.length must be count * 4", count * 4, rects.length);
         mCount = count;
         mRects = rects;
     }

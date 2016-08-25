@@ -631,7 +631,7 @@ public class GLES20Canvas implements GLCanvas {
 
     @Override
     public void fillSector(float cx, float cy, float radiusX, float radiusY, float sweepAngle, int color) {
-        float conjugateAngle = Math.abs(360 - MathUtils.positiveModulo(sweepAngle, 360));
+        float conjugateAngle = Math.abs(360 - positiveModulo(sweepAngle, 360));
         int conjugateCount = Math.round(COUNT_CIRCLE_VERTEX * conjugateAngle / 360);
         if (conjugateCount == 0) {
             // It is a circle
@@ -641,6 +641,14 @@ public class GLES20Canvas implements GLCanvas {
                     cx - radiusX, cy - radiusY, radiusX * 2, radiusY * 2, color, 0f);
             mCountFillRect++;
         }
+    }
+
+    public static float positiveModulo(float x, float y) {
+        float result = x % y;
+        if (x < 0) {
+            result += y;
+        }
+        return result;
     }
 
     @Override
