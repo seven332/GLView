@@ -46,7 +46,6 @@ public interface GLRoot {
     Matrix getCompensationMatrix();
     void freeze();
     void unfreeze();
-    void setLightsOutMode(boolean enabled);
 
     Context getContext();
 

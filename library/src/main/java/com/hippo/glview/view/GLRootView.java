@@ -16,11 +16,9 @@
 
 package com.hippo.glview.view;
 
-import android.annotation.TargetApi;
 import android.content.Context;
 import android.graphics.Matrix;
 import android.graphics.PixelFormat;
-import android.os.Build;
 import android.os.Parcelable;
 import android.os.Process;
 import android.os.SystemClock;
@@ -36,7 +34,6 @@ import com.hippo.glview.glrenderer.BasicTexture;
 import com.hippo.glview.glrenderer.GLCanvas;
 import com.hippo.glview.glrenderer.GLES20Canvas;
 import com.hippo.glview.glrenderer.UploadedTexture;
-import com.hippo.glview.util.ApiHelper;
 import com.hippo.glview.util.GalleryUtils;
 import com.hippo.glview.util.MotionEventHelper;
 import com.hippo.tuxiang.BestConfigChooser;
@@ -636,21 +633,6 @@ public class GLRootView extends GLSurfaceView
         mFreeze = false;
         mFreezeCondition.signalAll();
         mRenderLock.unlock();
-    }
-
-    @Override
-    @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
-    public void setLightsOutMode(boolean enabled) {
-        if (!ApiHelper.HAS_SET_SYSTEM_UI_VISIBILITY) return;
-
-        int flags = 0;
-        if (enabled) {
-            flags = STATUS_BAR_HIDDEN;
-            if (ApiHelper.HAS_VIEW_SYSTEM_UI_FLAG_LAYOUT_STABLE) {
-                flags |= (SYSTEM_UI_FLAG_FULLSCREEN | SYSTEM_UI_FLAG_LAYOUT_STABLE);
-            }
-        }
-        setSystemUiVisibility(flags);
     }
 
     // We need to unfreeze in the following methods and in onPause().
