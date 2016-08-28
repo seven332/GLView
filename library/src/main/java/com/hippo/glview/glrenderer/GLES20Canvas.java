@@ -524,6 +524,7 @@ public class GLES20Canvas implements GLCanvas {
         fillOval(cx, cy, radiusX - halfLineWidth, radiusY - halfLineWidth, paint.getBackgroundColor());
     }
 
+    // TODO Add startAngle
     @Override
     public void drawArc(float cx, float cy, float radiusX, float radiusY,
             float sweepAngle, GLPaint paint) {
@@ -629,6 +630,7 @@ public class GLES20Canvas implements GLCanvas {
         mCountFillRect++;
     }
 
+    // TODO Add startAngle
     @Override
     public void fillSector(float cx, float cy, float radiusX, float radiusY, float sweepAngle, int color) {
         float conjugateAngle = Math.abs(360 - positiveModulo(sweepAngle, 360));
