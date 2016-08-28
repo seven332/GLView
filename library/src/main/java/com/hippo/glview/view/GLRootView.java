@@ -54,7 +54,6 @@ import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 import javax.microedition.khronos.opengles.GL11;
 
-// TODO Call attachToRoot and detachFromRoot in render thread
 // The root component of all <code>GLView</code>s. The rendering is done in GL
 // thread while the event handling is done in the main thread.  To synchronize
 // the two threads, the entry points of this package need to synchronize on the
@@ -82,6 +81,7 @@ public class GLRootView extends GLSurfaceView
     private GL11 mGL;
     private GLCanvas mCanvas;
     private GLView mContentView;
+    private RendererListener mRendererListener;
 
     private OrientationSource mOrientationSource;
     // mCompensation is the difference between the UI orientation on GLCanvas
@@ -110,6 +110,47 @@ public class GLRootView extends GLSurfaceView
 
     private boolean mInDownState = false;
 
+    /**
+     * A callback for the {@link Renderer} of the {@code GLRootView}.
+     */
+    public interface RendererListener {
+
+        /**
+         * Called in the bottom of {@link Renderer#onSurfaceCreated(GL10, EGLConfig)}
+         */
+        void onSurfaceCreated();
+
+        /**
+         * Called in the bottom of {@link Renderer#onSurfaceChanged(GL10, int, int)}
+         */
+        void onSurfaceChanged();
+
+        /**
+         * Called in the bottom of {@link Renderer#onDrawFrame(GL10)}
+         */
+        void onDrawFrame();
+
+        /**
+         * Called in the bottom of {@link Renderer#onGLThreadStarts()}
+         */
+        void onGLThreadStarts();
+
+        /**
+         * Called in the bottom of {@link Renderer#onGLThreadExits()}
+         */
+        void onGLThreadExits();
+
+        /**
+         * Called in the bottom of {@link Renderer#onGLThreadPause()}
+         */
+        void onGLThreadPause();
+
+        /**
+         * Called in the bottom of {@link Renderer#onGLThreadResume()}
+         */
+        void onGLThreadResume();
+    }
+
     private class GLRootRenderer implements Renderer {
 
         /**
@@ -136,6 +177,11 @@ public class GLRootView extends GLSurfaceView
             } else {
                 setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
             }
+
+            // Callback
+            if (mRendererListener != null) {
+                mRendererListener.onSurfaceCreated();
+            }
         }
 
         /**
@@ -151,6 +197,11 @@ public class GLRootView extends GLSurfaceView
             Assert.assertTrue(mGL == gl);
 
             mCanvas.setSize(width, height);
+
+            // Callback
+            if (mRendererListener != null) {
+                mRendererListener.onSurfaceChanged();
+            }
         }
 
         @Override
@@ -177,26 +228,54 @@ public class GLRootView extends GLSurfaceView
             if (duration > 8) {
                 Log.v(TAG, "--- " + duration + " ---");
             }
+
+            // Callback
+            if (mRendererListener != null) {
+                mRendererListener.onDrawFrame();
+            }
         }
 
         @Override
-        public void onSurfaceDestroyed() {
+        public void onGLThreadStarts() {
+            // Callback
+            if (mRendererListener != null) {
+                mRendererListener.onGLThreadStarts();
+            }
+        }
+
+        @Override
+        public void onGLThreadExits() {
             if (mContentView != null && mContentView.isAttachedToRoot()) {
                 mContentView.detachFromRoot();
             }
-        }
 
-        @Override
-        public void onPause() {
-            if (mContentView != null) {
-                mContentView.pause();
+            // Callback
+            if (mRendererListener != null) {
+                mRendererListener.onGLThreadExits();
             }
         }
 
         @Override
-        public void onResume() {
+        public void onGLThreadPause() {
+            if (mContentView != null) {
+                mContentView.pause();
+            }
+
+            // Callback
+            if (mRendererListener != null) {
+                mRendererListener.onGLThreadPause();
+            }
+        }
+
+        @Override
+        public void onGLThreadResume() {
             if (mContentView != null) {
                 mContentView.resume();
+            }
+
+            // Callback
+            if (mRendererListener != null) {
+                mRendererListener.onGLThreadResume();
             }
         }
     }
@@ -221,6 +300,13 @@ public class GLRootView extends GLSurfaceView
         // setDebugFlags(DEBUG_CHECK_GL_ERROR);
     }
 
+    /**
+     * Register a callback to its Renderer.
+     */
+    public void setRendererListener(RendererListener rendererListener) {
+        mRendererListener = rendererListener;
+    }
+
     @Override
     public void registerLaunchedAnimation(CanvasAnimation animation) {
         // Register the newly launched animation so that we can set the start
@@ -241,6 +327,9 @@ public class GLRootView extends GLSurfaceView
         }
     }
 
+    /**
+     * Set content of the GLView. It must be called in render thread.
+     */
     @Override
     public void setContentPane(GLView content) {
         if (mContentView == content) return;
