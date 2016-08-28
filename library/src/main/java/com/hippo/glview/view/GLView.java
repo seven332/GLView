@@ -115,11 +115,6 @@ public class GLView implements TouchOwner {
     private int mLastWidthSpec = -1;
     private int mLastHeightSpec = -1;
 
-    protected int mScrollY = 0;
-    protected int mScrollX = 0;
-    protected int mScrollHeight = 0;
-    protected int mScrollWidth = 0;
-
     /**
      * The GlView's identifier.
      *
@@ -535,8 +530,8 @@ public class GLView implements TouchOwner {
             return;
         }
 
-        int xOffset = component.mBounds.left - mScrollX;
-        int yOffset = component.mBounds.top - mScrollY;
+        int xOffset = component.mBounds.left;
+        int yOffset = component.mBounds.top;
 
         canvas.translate(xOffset, yOffset);
 
@@ -698,6 +693,8 @@ public class GLView implements TouchOwner {
         boolean sizeChanged = setBounds(left, top, right, bottom);
         final boolean forceLayout = (mViewFlags & FLAG_LAYOUT_REQUESTED) == FLAG_LAYOUT_REQUESTED;
         if (sizeChanged || forceLayout) {
+            // If it has any child, the child will call layout in the onLayout below.
+            // So call notifyPositionInRoot is enough.
             notifyPositionInRoot();
             onLayout(sizeChanged, left, top, right, bottom);
         } else {
