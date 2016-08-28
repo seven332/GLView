@@ -434,9 +434,10 @@ public class GLRootView extends GLSurfaceView
 
         // Do the actual layout.
         if (mCompensation % 180 != 0) {
-            int tmp = w;
-            w = h;
-            h = tmp;
+            // Swap w and h
+            w = w ^ h;
+            h = w ^ h;
+            w = w ^ h;
         }
         Log.i(TAG, "layout content pane " + w + "x" + h + " (compensation " + mCompensation + ")");
         if (mContentView != null && w != 0 && h != 0) {
