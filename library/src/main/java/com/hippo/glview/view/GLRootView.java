@@ -366,19 +366,8 @@ public class GLRootView extends GLSurfaceView
         }
         if (mRenderRequested) return;
         mRenderRequested = true;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            postOnAnimation(mRequestRenderOnAnimationFrame);
-        } else {
-            super.requestRender();
-        }
+        super.requestRender();
     }
-
-    private final Runnable mRequestRenderOnAnimationFrame = new Runnable() {
-        @Override
-        public void run() {
-            superRequestRender();
-        }
-    };
 
     private void superRequestRender() {
         super.requestRender();
