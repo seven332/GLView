@@ -61,7 +61,7 @@ import javax.microedition.khronos.opengles.GL11;
 // (3) The overridden methods in GLRootView.
 public class GLRootView extends GLSurfaceView
         implements GLRoot {
-    private static final String TAG = "GLRootView";
+    private static final String LOG_TAG = GLRootView.class.getSimpleName();
 
     private static final boolean DEBUG_FPS = false;
     private int mFrameCount = 0;
@@ -71,6 +71,8 @@ public class GLRootView extends GLSurfaceView
     private int mInvalidateColor = 0;
 
     private static final boolean DEBUG_DRAWING_STAT = false;
+
+    private static final boolean DEBUG_SLOW = false;
 
     private static final int FLAG_INITIALIZED = 1;
     private static final int FLAG_NEED_LAYOUT = 2;
@@ -105,6 +107,7 @@ public class GLRootView extends GLSurfaceView
             mRenderLock.newCondition();
     private boolean mFreeze;
 
+    private long mLastDrawFinishTime;
     private boolean mInDownState = false;
 
     /**
@@ -158,7 +161,7 @@ public class GLRootView extends GLSurfaceView
             GL11 gl = (GL11) gl1;
             if (mGL != null) {
                 // The GL Object has changed
-                Log.i(TAG, "GLObject has changed from " + mGL + " to " + gl);
+                Log.i(LOG_TAG, "GLObject has changed from " + mGL + " to " + gl);
             }
             mRenderLock.lock();
             try {
@@ -187,7 +190,7 @@ public class GLRootView extends GLSurfaceView
          */
         @Override
         public void onSurfaceChanged(GL10 gl1, int width, int height) {
-            Log.i(TAG, "onSurfaceChanged: " + width + "x" + height + ", gl10: " + gl1.toString());
+            Log.i(LOG_TAG, "onSurfaceChanged: " + width + "x" + height + ", gl10: " + gl1.toString());
             Process.setThreadPriority(Process.THREAD_PRIORITY_DISPLAY);
             GalleryUtils.setRenderThread();
             GL11 gl = (GL11) gl1;
@@ -219,11 +222,16 @@ public class GLRootView extends GLSurfaceView
                 mRenderLock.unlock();
             }
 
-            long t = System.nanoTime();
-            long duration = (t - t0) / 1000000;
+            if (DEBUG_SLOW) {
+                long t = System.nanoTime();
+                long durationInMs = (t - mLastDrawFinishTime) / 1000000;
+                long durationDrawInMs = (t - t0) / 1000000;
+                mLastDrawFinishTime = t;
 
-            if (duration > 8) {
-                Log.v(TAG, "--- " + duration + " ---");
+                if (durationInMs > 34) {  // 34ms -> we skipped at least 2 frames
+                    Log.v(LOG_TAG, "----- SLOW (" + durationDrawInMs + "/" +
+                            durationInMs + ") -----");
+                }
             }
 
             // Callback
@@ -359,7 +367,7 @@ public class GLRootView extends GLSurfaceView
         if (DEBUG_INVALIDATE) {
             StackTraceElement e = Thread.currentThread().getStackTrace()[4];
             String caller = e.getFileName() + ":" + e.getLineNumber() + " ";
-            Log.d(TAG, "invalidate: " + caller);
+            Log.d(LOG_TAG, "invalidate: " + caller);
         }
         if (mRenderRequested) return;
         mRenderRequested = true;
@@ -425,7 +433,7 @@ public class GLRootView extends GLSurfaceView
             h = w ^ h;
             w = w ^ h;
         }
-        Log.i(TAG, "layout content pane " + w + "x" + h + " (compensation " + mCompensation + ")");
+        Log.i(LOG_TAG, "layout content pane " + w + "x" + h + " (compensation " + mCompensation + ")");
         if (mContentView != null && w != 0 && h != 0) {
             mContentView.measure(GLView.MeasureSpec.makeMeasureSpec(w, GLView.MeasureSpec.EXACTLY),
                     GLView.MeasureSpec.makeMeasureSpec(h, GLView.MeasureSpec.EXACTLY));
@@ -446,7 +454,7 @@ public class GLRootView extends GLSurfaceView
         if (mFrameCountingStart == 0) {
             mFrameCountingStart = now;
         } else if ((now - mFrameCountingStart) > 1000000000) {
-            Log.d(TAG, "fps: " + (double) mFrameCount
+            Log.d(LOG_TAG, "fps: " + (double) mFrameCount
                     * 1000000000 / (now - mFrameCountingStart));
             mFrameCountingStart = now;
             mFrameCount = 0;
