@@ -298,7 +298,6 @@ public class GLRootView extends GLSurfaceView
         final int eglContextClientVersion = 2;
         setEGLContextClientVersion(eglContextClientVersion);
         setEGLConfigChooser(new BestConfigChooser(eglContextClientVersion));
-        setRenderer(new GLRootRenderer());
         getHolder().setFormat(PixelFormat.RGB_888);
 
         // Uncomment this to enable gl error check.
@@ -307,9 +306,20 @@ public class GLRootView extends GLSurfaceView
 
     /**
      * Register a callback to its Renderer.
+     * Call it before {@link #applyRenderer()}.
      */
     public void setRendererListener(RendererListener rendererListener) {
         mRendererListener = rendererListener;
+    }
+
+    /**
+     * Call setRenderer(), GL thread will start right now. It must be called.
+     * Nothing will happen if it called twice.
+     */
+    public void applyRenderer() {
+        if (getRenderer() == null) {
+            setRenderer(new GLRootRenderer());
+        }
     }
 
     @Override
