@@ -27,6 +27,7 @@ public abstract class GLActivity extends Activity implements GLRootView.Renderer
             throw new IllegalStateException("Can't find GLRootView");
         }
         mGLRootView.setRendererListener(this);
+        mGLRootView.applyRenderer();
     }
 
     @Override

@@ -2,8 +2,12 @@ package com.hippo.glview.example;
 
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
+import android.widget.Button;
 
 import com.hippo.glview.view.GLRootView;
+
+import javax.microedition.khronos.opengles.GL10;
 
 public class MainActivity extends GLActivity {
 
@@ -14,6 +18,30 @@ public class MainActivity extends GLActivity {
 
         final GLRootView glRootView = getGLRootView();
         glRootView.setContentPane(new GLTestView());
+
+        final GLRootView.Handler handler = new GLRootView.Handler() {
+            @Override
+            public void onHandle(GL10 gl) {
+                Log.d("TAG", "onHandle");
+            }
+        };
+        glRootView.registerHandler(handler);
+
+        final Button button2 = (Button) findViewById(R.id.post);
+        button2.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                handler.request();
+            }
+        });
+
+        final Button button1 = (Button) findViewById(R.id.render);
+        button1.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                glRootView.requestRender();
+            }
+        });
     }
 
     @Override
