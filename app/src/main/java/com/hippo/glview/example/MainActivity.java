@@ -5,7 +5,7 @@ import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 
-import com.hippo.glview.view.GLRootView;
+import com.hippo.glview.view.GLRoot;
 
 import javax.microedition.khronos.opengles.GL10;
 
@@ -16,16 +16,16 @@ public class MainActivity extends GLActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        final GLRootView glRootView = getGLRootView();
-        glRootView.setContentPane(new GLTestView());
+        final GLRoot glRoot = getGLRoot();
+        glRoot.setContentPane(new GLTestView());
 
-        final GLRootView.Handler handler = new GLRootView.Handler() {
+        final GLRoot.Handler handler = new GLRoot.Handler() {
             @Override
             public void onHandle(GL10 gl) {
                 Log.d("TAG", "onHandle");
             }
         };
-        glRootView.registerHandler(handler);
+        glRoot.registerHandler(handler);
 
         final Button button2 = (Button) findViewById(R.id.post);
         button2.setOnClickListener(new View.OnClickListener() {
@@ -39,7 +39,7 @@ public class MainActivity extends GLActivity {
         button1.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                glRootView.requestRender();
+                glRoot.requestRender();
             }
         });
     }

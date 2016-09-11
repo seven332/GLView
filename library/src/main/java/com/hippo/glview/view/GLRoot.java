@@ -18,37 +18,772 @@ package com.hippo.glview.view;
 
 import android.content.Context;
 import android.graphics.Matrix;
+import android.graphics.PixelFormat;
+import android.os.Parcelable;
+import android.os.Process;
+import android.os.SystemClock;
+import android.support.annotation.NonNull;
+import android.util.AttributeSet;
+import android.util.Log;
+import android.util.SparseArray;
+import android.view.MotionEvent;
+import android.view.SurfaceHolder;
 
 import com.hippo.glview.anim.CanvasAnimation;
+import com.hippo.glview.glrenderer.BasicTexture;
 import com.hippo.glview.glrenderer.GLCanvas;
+import com.hippo.glview.glrenderer.GLES20Canvas;
+import com.hippo.glview.glrenderer.UploadedTexture;
+import com.hippo.glview.util.GalleryUtils;
+import com.hippo.glview.util.MotionEventHelper;
+import com.hippo.tuxiang.BestConfigChooser;
+import com.hippo.tuxiang.GLSurfaceView;
+import com.hippo.tuxiang.Renderer;
 
-public interface GLRoot {
+import junit.framework.Assert;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
+
+import javax.microedition.khronos.egl.EGLConfig;
+import javax.microedition.khronos.opengles.GL10;
+import javax.microedition.khronos.opengles.GL11;
+
+// The root component of all <code>GLView</code>s. The rendering is done in GL
+// thread while the event handling is done in the main thread.  To synchronize
+// the two threads, the entry points of this package need to synchronize on the
+// <code>GLRootView</code> instance unless it can be proved that the rendering
+// thread won't access the same thing as the method. The entry points include:
+// (1) The public methods of HeadUpDisplay
+// (2) The public methods of CameraHeadUpDisplay
+// (3) The overridden methods in GLRootView.
+public class GLRoot extends GLSurfaceView {
+    private static final String LOG_TAG = GLRoot.class.getSimpleName();
+
+    private static final boolean DEBUG_FPS = false;
+    private int mFrameCount = 0;
+    private long mFrameCountingStart = 0;
+
+    private static final boolean DEBUG_INVALIDATE = false;
+    private int mInvalidateColor = 0;
+
+    private static final boolean DEBUG_DRAWING_STAT = false;
+
+    private static final boolean DEBUG_SLOW = false;
+
+    private static final int FLAG_INITIALIZED = 1;
+    private static final int FLAG_NEED_LAYOUT = 2;
+
+    private GL11 mGL;
+    private GLCanvas mCanvas;
+    private GLView mContentView;
+    private RendererListener mRendererListener;
+
+    private OrientationSource mOrientationSource;
+    // mCompensation is the difference between the UI orientation on GLCanvas
+    // and the framework orientation. See OrientationManager for details.
+    private int mCompensation;
+    // mCompensationMatrix maps the coordinates of touch events. It is kept sync
+    // with mCompensation.
+    private final Matrix mCompensationMatrix = new Matrix();
+    private int mDisplayRotation;
+
+    private int mFlags = FLAG_NEED_LAYOUT;
+
+    private final ArrayList<CanvasAnimation> mAnimations =
+            new ArrayList<>();
+
+    private final ArrayDeque<OnGLIdleListener> mIdleListeners =
+            new ArrayDeque<>();
+
+    private final IdleRunner mIdleRunner = new IdleRunner();
+
+    private volatile boolean mDrawRequested = false;
+
+    private volatile boolean mRenderRequested = false;
+    private final ReentrantLock mRenderLock = new ReentrantLock();
+    private final Condition mFreezeCondition =
+            mRenderLock.newCondition();
+    private boolean mFreeze;
+
+    private volatile boolean mPostRequested = false;
+    private final Object mPostLock = new Object();
+    private final List<Handler> mHandlerList = new ArrayList<>();
+    private final List<Handler> mTempHandlerList = new ArrayList<>();
+
+    private long mLastDrawFinishTime;
+    private boolean mInDownState = false;
 
     // Listener will be called when GL is idle AND before each frame.
     // Mainly used for uploading textures.
-    interface OnGLIdleListener {
+    public interface OnGLIdleListener {
         boolean onGLIdle(GLCanvas canvas, boolean renderRequested);
     }
 
-    void addOnGLIdleListener(OnGLIdleListener listener);
-    void registerLaunchedAnimation(CanvasAnimation animation);
-    void requestRenderForced();
-    void requestRender();
-    void requestLayoutContentPane();
+    /**
+     * A callback for the {@link Renderer} of the {@code GLRootView}.
+     */
+    public interface RendererListener {
 
-    void lockRenderThread();
-    void unlockRenderThread();
+        /**
+         * Called in the bottom of {@link Renderer#onSurfaceCreated(GL10, EGLConfig)}
+         */
+        void onSurfaceCreated();
 
-    void setContentPane(GLView content);
-    void setOrientationSource(OrientationSource source);
-    int getDisplayRotation();
-    int getCompensation();
-    Matrix getCompensationMatrix();
-    void freeze();
-    void unfreeze();
+        /**
+         * Called in the bottom of {@link Renderer#onSurfaceChanged(GL10, int, int)}
+         */
+        void onSurfaceChanged();
 
-    Context getContext();
+        /**
+         * Called in the bottom of {@link Renderer#onDrawFrame(GL10)}
+         */
+        void onDrawFrame();
 
-    int getWidth();
-    int getHeight();
+        /**
+         * Called in the bottom of {@link Renderer#onGLThreadStart()}
+         */
+        void onGLThreadStart();
+
+        /**
+         * Called in the bottom of {@link Renderer#onGLThreadExit()}
+         */
+        void onGLThreadExit();
+
+        /**
+         * Called in the bottom of {@link Renderer#onGLThreadPause()}
+         */
+        void onGLThreadPause();
+
+        /**
+         * Called in the bottom of {@link Renderer#onGLThreadResume()}
+         */
+        void onGLThreadResume();
+    }
+
+    private class GLRootRenderer implements Renderer {
+
+        /**
+         * Called when the context is created, possibly after automatic destruction.
+         */
+        @Override
+        public void onSurfaceCreated(GL10 gl1, EGLConfig config) {
+            final GL11 gl = (GL11) gl1;
+            if (mGL != null) {
+                // The GL Object has changed
+                Log.i(LOG_TAG, "GLObject has changed from " + mGL + " to " + gl);
+            }
+            mRenderLock.lock();
+            try {
+                mGL = gl;
+                mCanvas = new GLES20Canvas();
+                BasicTexture.invalidateAllTextures();
+            } finally {
+                mRenderLock.unlock();
+            }
+
+            if (DEBUG_FPS) {
+                setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
+            } else {
+                setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
+            }
+
+            // Callback
+            if (mRendererListener != null) {
+                mRendererListener.onSurfaceCreated();
+            }
+        }
+
+        /**
+         * Called when the OpenGL surface is recreated without destroying the
+         * context.
+         */
+        @Override
+        public void onSurfaceChanged(GL10 gl1, int width, int height) {
+            Log.i(LOG_TAG, "onSurfaceChanged: " + width + "x" + height + ", gl10: " + gl1.toString());
+            Process.setThreadPriority(Process.THREAD_PRIORITY_DISPLAY);
+            GalleryUtils.setRenderThread();
+            final GL11 gl = (GL11) gl1;
+            Assert.assertTrue(mGL == gl);
+
+            mCanvas.setSize(width, height);
+
+            // Callback
+            if (mRendererListener != null) {
+                mRendererListener.onSurfaceChanged();
+            }
+        }
+
+        @Override
+        public boolean onDrawFrame(GL10 gl) {
+            final boolean drawRequested = mDrawRequested;
+            mDrawRequested = false;
+
+            if (mPostRequested) {
+                post(gl);
+            }
+
+            // Still render if not triggered by requestRender()
+            final boolean drew;
+            if (!drawRequested || mRenderRequested) {
+                drew = true;
+                render(gl);
+            } else {
+                drew = false;
+            }
+
+            // Callback
+            if (mRendererListener != null) {
+                mRendererListener.onDrawFrame();
+            }
+
+            return drew;
+        }
+
+        @Override
+        public void onGLThreadStart() {
+            // Callback
+            if (mRendererListener != null) {
+                mRendererListener.onGLThreadStart();
+            }
+        }
+
+        @Override
+        public void onGLThreadExit() {
+            if (mContentView != null && mContentView.isAttachedToRoot()) {
+                mContentView.detachFromRoot();
+            }
+
+            // Callback
+            if (mRendererListener != null) {
+                mRendererListener.onGLThreadExit();
+            }
+        }
+
+        @Override
+        public void onGLThreadPause() {
+            if (mContentView != null) {
+                mContentView.pause();
+            }
+
+            // Callback
+            if (mRendererListener != null) {
+                mRendererListener.onGLThreadPause();
+            }
+        }
+
+        @Override
+        public void onGLThreadResume() {
+            if (mContentView != null) {
+                mContentView.resume();
+            }
+
+            // Callback
+            if (mRendererListener != null) {
+                mRendererListener.onGLThreadResume();
+            }
+        }
+    }
+
+    public GLRoot(Context context) {
+        this(context, null);
+    }
+
+    @SuppressWarnings("deprecation")
+    public GLRoot(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        mFlags |= FLAG_INITIALIZED;
+        setBackgroundDrawable(null);
+
+        final int eglContextClientVersion = 2;
+        setEGLContextClientVersion(eglContextClientVersion);
+        setEGLConfigChooser(new BestConfigChooser(eglContextClientVersion));
+        getHolder().setFormat(PixelFormat.RGB_888);
+
+        // Uncomment this to enable gl error check.
+        // setDebugFlags(DEBUG_CHECK_GL_ERROR);
+    }
+
+    /**
+     * Register a callback to its Renderer.
+     * Call it before {@link #applyRenderer()}.
+     */
+    public void setRendererListener(RendererListener rendererListener) {
+        mRendererListener = rendererListener;
+    }
+
+    /**
+     * Call setRenderer(), GL thread will start right now. It must be called.
+     * Nothing will happen if it called twice.
+     */
+    public void applyRenderer() {
+        if (getRenderer() == null) {
+            setRenderer(new GLRootRenderer());
+        }
+    }
+
+    public void registerLaunchedAnimation(CanvasAnimation animation) {
+        // Register the newly launched animation so that we can set the start
+        // time more precisely. (Usually, it takes much longer for first
+        // rendering, so we set the animation start time as the time we
+        // complete rendering)
+        mAnimations.add(animation);
+    }
+
+    public void addOnGLIdleListener(OnGLIdleListener listener) {
+        synchronized (mIdleListeners) {
+            mIdleListeners.addLast(listener);
+            if (mCanvas != null) {
+                // Wait for onSurfaceCreated
+                mIdleRunner.enable();
+            }
+        }
+    }
+
+    /**
+     * Set content of the GLView. It must be called in render thread.
+     */
+    public void setContentPane(GLView content) {
+        if (mContentView == content) return;
+        if (mContentView != null) {
+            if (mInDownState) {
+                final long now = SystemClock.uptimeMillis();
+                final MotionEvent cancelEvent = MotionEvent.obtain(
+                        now, now, MotionEvent.ACTION_CANCEL, 0, 0, 0);
+                mContentView.dispatchTouchEvent(cancelEvent);
+                cancelEvent.recycle();
+                mInDownState = false;
+            }
+            mContentView.detachFromRoot();
+            BasicTexture.yieldAllTextures();
+        }
+        mContentView = content;
+        if (content != null) {
+            content.attachToRoot(this);
+            requestLayoutContentPane();
+        }
+    }
+
+    /**
+     * Handler stuff in render thread.
+     */
+    public static abstract class Handler {
+
+        private GLRoot host;
+        private boolean requested = false;
+
+        public void request() {
+            final GLRoot host = this.host;
+            if (!requested && host != null) {
+                requested = true;
+                host.requestPost();
+            }
+        }
+
+        public abstract void onHandle(GL10 gl);
+    }
+
+    public void registerHandler(Handler handler) {
+        synchronized (mPostLock) {
+            handler.host = this;
+            mHandlerList.add(handler);
+        }
+    }
+
+    public void unregisterHandler(Handler handler) {
+        synchronized (mPostLock) {
+            handler.host = null;
+            mHandlerList.remove(handler);
+        }
+    }
+
+    private void requestPost() {
+        if (mPostRequested) return;
+        mPostRequested = true;
+        if (mDrawRequested) return;
+        mDrawRequested = true;
+        super.requestRender();
+    }
+
+    @Override
+    public void requestRender() {
+        if (DEBUG_INVALIDATE) {
+            final StackTraceElement e = Thread.currentThread().getStackTrace()[4];
+            final String caller = e.getFileName() + ":" + e.getLineNumber() + " ";
+            Log.d(LOG_TAG, "invalidate: " + caller);
+        }
+        if (mRenderRequested) return;
+        mRenderRequested = true;
+        if (mDrawRequested) return;
+        mDrawRequested = true;
+        super.requestRender();
+    }
+
+    private void post(GL10 gl) {
+        mPostRequested = false;
+
+        final List<Handler> tempList = mTempHandlerList;
+
+        synchronized (mPostLock) {
+            tempList.addAll(mHandlerList);
+        }
+
+        for (int i = 0, len = tempList.size(); i < len; ++i) {
+            final Handler handler = tempList.get(i);
+            if (handler.requested) {
+                handler.requested = false;
+                handler.onHandle(gl);
+            }
+        }
+
+        mTempHandlerList.clear();
+    }
+
+    private void render(GL10 gl) {
+        mRenderRequested = false;
+
+        AnimationTime.update();
+
+        final long t0 = System.nanoTime();
+
+        mRenderLock.lock();
+
+        while (mFreeze) {
+            mFreezeCondition.awaitUninterruptibly();
+        }
+
+        try {
+            onDrawFrameLocked(gl);
+        } finally {
+            mRenderLock.unlock();
+        }
+
+        if (DEBUG_SLOW) {
+            final long t = System.nanoTime();
+            final long durationInMs = (t - mLastDrawFinishTime) / 1000000;
+            final long durationDrawInMs = (t - t0) / 1000000;
+            mLastDrawFinishTime = t;
+
+            if (durationInMs > 34) {  // 34ms -> we skipped at least 2 frames
+                Log.v(LOG_TAG, "----- SLOW (" + durationDrawInMs + "/" +
+                        durationInMs + ") -----");
+            }
+        }
+    }
+
+    public void requestLayoutContentPane() {
+        mRenderLock.lock();
+        try {
+            if (mContentView == null || (mFlags & FLAG_NEED_LAYOUT) != 0) return;
+
+            // "View" system will invoke onLayout() for initialization(bug ?), we
+            // have to ignore it since the GLThread is not ready yet.
+            if ((mFlags & FLAG_INITIALIZED) == 0) return;
+
+            mFlags |= FLAG_NEED_LAYOUT;
+            requestRender();
+        } finally {
+            mRenderLock.unlock();
+        }
+    }
+
+    private void layoutContentPane() {
+        mFlags &= ~FLAG_NEED_LAYOUT;
+
+        int w = getWidth();
+        int h = getHeight();
+        final int displayRotation;
+        final int compensation;
+
+        // Get the new orientation values
+        if (mOrientationSource != null) {
+            displayRotation = mOrientationSource.getDisplayRotation();
+            compensation = mOrientationSource.getCompensation();
+        } else {
+            displayRotation = 0;
+            compensation = 0;
+        }
+
+        if (mCompensation != compensation) {
+            mCompensation = compensation;
+            if (mCompensation % 180 != 0) {
+                mCompensationMatrix.setRotate(mCompensation);
+                // move center to origin before rotation
+                mCompensationMatrix.preTranslate(-w / 2, -h / 2);
+                // align with the new origin after rotation
+                mCompensationMatrix.postTranslate(h / 2, w / 2);
+            } else {
+                mCompensationMatrix.setRotate(mCompensation, w / 2, h / 2);
+            }
+        }
+        mDisplayRotation = displayRotation;
+
+        // Do the actual layout.
+        if (mCompensation % 180 != 0) {
+            // Swap w and h
+            w = w ^ h;
+            h = w ^ h;
+            w = w ^ h;
+        }
+        Log.i(LOG_TAG, "layout content pane " + w + "x" + h + " (compensation " + mCompensation + ")");
+        if (mContentView != null && w != 0 && h != 0) {
+            mContentView.measure(GLView.MeasureSpec.makeMeasureSpec(w, GLView.MeasureSpec.EXACTLY),
+                    GLView.MeasureSpec.makeMeasureSpec(h, GLView.MeasureSpec.EXACTLY));
+            mContentView.layout(0, 0, w, h);
+        }
+        // Uncomment this to dump the view hierarchy.
+        //mContentView.dumpTree("");
+    }
+
+    @Override
+    protected void onLayout(
+            boolean changed, int left, int top, int right, int bottom) {
+        if (changed) requestLayoutContentPane();
+    }
+
+    private void outputFps() {
+        final long now = System.nanoTime();
+        if (mFrameCountingStart == 0) {
+            mFrameCountingStart = now;
+        } else if ((now - mFrameCountingStart) > 1000000000) {
+            Log.d(LOG_TAG, "fps: " + (double) mFrameCount
+                    * 1000000000 / (now - mFrameCountingStart));
+            mFrameCountingStart = now;
+            mFrameCount = 0;
+        }
+        ++mFrameCount;
+    }
+
+    private void onDrawFrameLocked(GL10 gl) {
+        if (DEBUG_FPS) outputFps();
+        // release the unbound textures and deleted buffers.
+        mCanvas.deleteRecycledResources();
+
+        // reset texture upload limit
+        UploadedTexture.resetUploadLimit();
+
+        if ((mOrientationSource != null
+                && mDisplayRotation != mOrientationSource.getDisplayRotation())
+                || (mFlags & FLAG_NEED_LAYOUT) != 0) {
+            layoutContentPane();
+        }
+
+        mCanvas.save(GLCanvas.SAVE_FLAG_ALL);
+        rotateCanvas(-mCompensation);
+        if (mContentView != null) {
+           mContentView.render(mCanvas);
+        } else {
+            // Make sure we always draw something to prevent displaying garbage
+            mCanvas.clearBuffer();
+        }
+        mCanvas.restore();
+
+        if (!mAnimations.isEmpty()) {
+            final long now = AnimationTime.get();
+            for (int i = 0, n = mAnimations.size(); i < n; i++) {
+                mAnimations.get(i).setStartTime(now);
+            }
+            mAnimations.clear();
+        }
+
+        if (UploadedTexture.uploadLimitReached()) {
+            requestRender();
+        }
+
+        synchronized (mIdleListeners) {
+            if (!mIdleListeners.isEmpty()) mIdleRunner.enable();
+        }
+
+        if (DEBUG_INVALIDATE) {
+            mCanvas.fillRect(10, 10, 5, 5, mInvalidateColor);
+            mInvalidateColor = ~mInvalidateColor;
+        }
+
+        if (DEBUG_DRAWING_STAT) {
+            mCanvas.dumpStatisticsAndClear();
+        }
+    }
+
+    private void rotateCanvas(int degrees) {
+        if (degrees == 0) return;
+        final int w = getWidth();
+        final int h = getHeight();
+        final int cx = w / 2;
+        final int cy = h / 2;
+        mCanvas.translate(cx, cy);
+        mCanvas.rotate(degrees, 0, 0, 1);
+        if (degrees % 180 != 0) {
+            mCanvas.translate(-cy, -cx);
+        } else {
+            mCanvas.translate(-cx, -cy);
+        }
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (!isEnabled()) return false;
+
+        final int action = event.getAction();
+        if (action == MotionEvent.ACTION_CANCEL
+                || action == MotionEvent.ACTION_UP) {
+            mInDownState = false;
+        } else if (!mInDownState && action != MotionEvent.ACTION_DOWN) {
+            return false;
+        }
+
+        if (mCompensation != 0) {
+            event = MotionEventHelper.transformEvent(event, mCompensationMatrix);
+        }
+
+        mRenderLock.lock();
+        try {
+            // If this has been detached from root, we don't need to handle event
+            final boolean handled = mContentView != null
+                    && mContentView.dispatchTouchEvent(event);
+            if (action == MotionEvent.ACTION_DOWN && handled) {
+                mInDownState = true;
+            }
+            return handled;
+        } finally {
+            mRenderLock.unlock();
+        }
+    }
+
+    private class IdleRunner implements Runnable {
+        // true if the idle runner is in the queue
+        private boolean mActive = false;
+
+        @Override
+        public void run() {
+            final OnGLIdleListener listener;
+            synchronized (mIdleListeners) {
+                mActive = false;
+                if (mIdleListeners.isEmpty()) return;
+                listener = mIdleListeners.removeFirst();
+            }
+            mRenderLock.lock();
+            boolean keepInQueue;
+            try {
+                keepInQueue = listener.onGLIdle(mCanvas, mRenderRequested);
+            } finally {
+                mRenderLock.unlock();
+            }
+            synchronized (mIdleListeners) {
+                if (keepInQueue) mIdleListeners.addLast(listener);
+                if (!mRenderRequested && !mIdleListeners.isEmpty()) enable();
+            }
+        }
+
+        public void enable() {
+            // Who gets the flag can add it to the queue
+            if (mActive) return;
+            mActive = true;
+            queueEvent(this);
+        }
+    }
+
+    public void lockRenderThread() {
+        mRenderLock.lock();
+    }
+
+    public void unlockRenderThread() {
+        mRenderLock.unlock();
+    }
+
+    @Override
+    public void onPause() {
+        unfreeze();
+        super.onPause();
+    }
+
+    public void setOrientationSource(OrientationSource source) {
+        mOrientationSource = source;
+    }
+
+    public int getDisplayRotation() {
+        return mDisplayRotation;
+    }
+
+    public int getCompensation() {
+        return mCompensation;
+    }
+
+    public Matrix getCompensationMatrix() {
+        return mCompensationMatrix;
+    }
+
+    public void freeze() {
+        mRenderLock.lock();
+        mFreeze = true;
+        mRenderLock.unlock();
+    }
+
+    public void unfreeze() {
+        mRenderLock.lock();
+        mFreeze = false;
+        mFreezeCondition.signalAll();
+        mRenderLock.unlock();
+    }
+
+    // We need to unfreeze in the following methods and in onPause().
+    // These methods will wait on GLThread. If we have freezed the GLRootView,
+    // the GLThread will wait on main thread to call unfreeze and cause dead
+    // lock.
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
+        unfreeze();
+        super.surfaceChanged(holder, format, w, h);
+    }
+
+    @Override
+    public void surfaceCreated(SurfaceHolder holder) {
+        unfreeze();
+        super.surfaceCreated(holder);
+    }
+
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        unfreeze();
+        super.surfaceDestroyed(holder);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        unfreeze();
+        super.onDetachedFromWindow();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    protected void dispatchSaveInstanceState(@NonNull SparseArray<Parcelable> container) {
+        super.dispatchSaveInstanceState(container);
+        if (mContentView != null) {
+            mContentView.saveHierarchyState(container);
+        }
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    protected void dispatchRestoreInstanceState(@NonNull SparseArray<Parcelable> container) {
+        super.dispatchRestoreInstanceState(container);
+        if (mContentView != null) {
+            mContentView.restoreHierarchyState(container);
+        }
+    }
+
+    @Override
+    protected void finalize() throws Throwable {
+        try {
+            unfreeze();
+        } finally {
+            super.finalize();
+        }
+    }
 }

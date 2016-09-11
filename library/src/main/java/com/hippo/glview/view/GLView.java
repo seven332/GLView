@@ -607,7 +607,7 @@ public class GLView implements TouchOwner {
     }
 
     /**
-     * Called by {@link GLRootView#dispatchSaveInstanceState(SparseArray)} to
+     * Called by {@link GLRoot#dispatchSaveInstanceState(SparseArray)} to
      * store this GlView hierarchy's frozen state into the given container.
      *
      * @param container The SparseArray in which to save the view's state.
@@ -633,7 +633,7 @@ public class GLView implements TouchOwner {
     }
 
     /**
-     * Called by {@link GLRootView#dispatchRestoreInstanceState(SparseArray)} to
+     * Called by {@link GLRoot#dispatchRestoreInstanceState(SparseArray)} to
      * restore this view hierarchy's frozen state from the given container.
      *
      * @param container The SparseArray which holds previously frozen states.

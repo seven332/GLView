@@ -7,11 +7,11 @@ package com.hippo.glview.example;
 import android.app.Activity;
 import android.support.annotation.IdRes;
 
-import com.hippo.glview.view.GLRootView;
+import com.hippo.glview.view.GLRoot;
 
-public abstract class GLActivity extends Activity implements GLRootView.RendererListener {
+public abstract class GLActivity extends Activity implements GLRoot.RendererListener {
 
-    private GLRootView mGLRootView;
+    private GLRoot mGLRoot;
 
     @IdRes
     protected abstract int getGLRootViewId();
@@ -19,31 +19,31 @@ public abstract class GLActivity extends Activity implements GLRootView.Renderer
     @Override
     public void onContentChanged() {
         super.onContentChanged();
-        if (mGLRootView != null) {
+        if (mGLRoot != null) {
             throw new IllegalStateException("Can't set content twice");
         }
-        mGLRootView = (GLRootView) findViewById(getGLRootViewId());
-        if (mGLRootView == null) {
+        mGLRoot = (GLRoot) findViewById(getGLRootViewId());
+        if (mGLRoot == null) {
             throw new IllegalStateException("Can't find GLRootView");
         }
-        mGLRootView.setRendererListener(this);
-        mGLRootView.applyRenderer();
+        mGLRoot.setRendererListener(this);
+        mGLRoot.applyRenderer();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        mGLRootView.onResume();
+        mGLRoot.onResume();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        mGLRootView.onPause();
+        mGLRoot.onPause();
     }
 
-    public GLRootView getGLRootView() {
-        return mGLRootView;
+    public GLRoot getGLRoot() {
+        return mGLRoot;
     }
 
     @Override
