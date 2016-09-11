@@ -44,6 +44,7 @@ import junit.framework.Assert;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -92,7 +93,6 @@ public class GLRootView extends GLSurfaceView
     private int mDisplayRotation;
 
     private int mFlags = FLAG_NEED_LAYOUT;
-    private volatile boolean mRenderRequested = false;
 
     private final ArrayList<CanvasAnimation> mAnimations =
             new ArrayList<>();
@@ -102,10 +102,18 @@ public class GLRootView extends GLSurfaceView
 
     private final IdleRunner mIdleRunner = new IdleRunner();
 
+    private volatile boolean mDrawRequested = false;
+
+    private volatile boolean mRenderRequested = false;
     private final ReentrantLock mRenderLock = new ReentrantLock();
     private final Condition mFreezeCondition =
             mRenderLock.newCondition();
     private boolean mFreeze;
+
+    private volatile boolean mPostRequested = false;
+    private final Object mPostLock = new Object();
+    private final List<Handler> mHandlerList = new ArrayList<>();
+    private final List<Handler> mTempHandlerList = new ArrayList<>();
 
     private long mLastDrawFinishTime;
     private boolean mInDownState = false;
@@ -206,32 +214,16 @@ public class GLRootView extends GLSurfaceView
 
         @Override
         public void onDrawFrame(GL10 gl) {
-            AnimationTime.update();
+            final boolean drawRequested = mDrawRequested;
+            mDrawRequested = false;
 
-            long t0 = System.nanoTime();
-
-            mRenderLock.lock();
-
-            while (mFreeze) {
-                mFreezeCondition.awaitUninterruptibly();
+            if (mPostRequested) {
+                post(gl);
             }
 
-            try {
-                onDrawFrameLocked(gl);
-            } finally {
-                mRenderLock.unlock();
-            }
-
-            if (DEBUG_SLOW) {
-                long t = System.nanoTime();
-                long durationInMs = (t - mLastDrawFinishTime) / 1000000;
-                long durationDrawInMs = (t - t0) / 1000000;
-                mLastDrawFinishTime = t;
-
-                if (durationInMs > 34) {  // 34ms -> we skipped at least 2 frames
-                    Log.v(LOG_TAG, "----- SLOW (" + durationDrawInMs + "/" +
-                            durationInMs + ") -----");
-                }
+            // Still render if not triggered by requestRender()
+            if (!drawRequested || mRenderRequested) {
+                render(gl);
             }
 
             // Callback
@@ -367,9 +359,52 @@ public class GLRootView extends GLSurfaceView
         }
     }
 
+    /**
+     * Handler stuff in render thread.
+     */
+    public static abstract class Handler {
+
+        private GLRootView host;
+        private boolean requested = false;
+
+        public void request() {
+            final GLRootView host = this.host;
+            if (!requested && host != null) {
+                requested = true;
+                host.requestPost();
+            }
+        }
+
+        public abstract void onHandle(GL10 gl);
+    }
+
+    public void registerHandler(Handler handler) {
+        synchronized (mPostLock) {
+            handler.host = this;
+            mHandlerList.add(handler);
+        }
+    }
+
+    public void unregisterHandler(Handler handler) {
+        synchronized (mPostLock) {
+            handler.host = null;
+            mHandlerList.remove(handler);
+        }
+    }
+
+    private void requestPost() {
+        if (mPostRequested) return;
+        mPostRequested = true;
+        if (mDrawRequested) return;
+        mDrawRequested = true;
+        super.requestRender();
+    }
+
     @Override
     public void requestRenderForced() {
-        superRequestRender();
+        mRenderRequested = true;
+        mDrawRequested = true;
+        super.requestRender();
     }
 
     @Override
@@ -381,11 +416,67 @@ public class GLRootView extends GLSurfaceView
         }
         if (mRenderRequested) return;
         mRenderRequested = true;
+        if (mDrawRequested) return;
+        mDrawRequested = true;
         super.requestRender();
     }
 
-    private void superRequestRender() {
-        super.requestRender();
+    private void post(GL10 gl) {
+
+        Log.d("TAG", "Post");
+
+        mPostRequested = false;
+
+        final List<Handler> tempList = mTempHandlerList;
+
+        synchronized (mPostLock) {
+            tempList.addAll(mHandlerList);
+        }
+
+        for (int i = 0, len = tempList.size(); i < len; ++i) {
+            final Handler handler = tempList.get(i);
+            if (handler.requested) {
+                handler.requested = false;
+                handler.onHandle(gl);
+            }
+        }
+
+        mTempHandlerList.clear();
+    }
+
+    private void render(GL10 gl) {
+
+        Log.d("TAG", "Render");
+
+        mRenderRequested = false;
+
+        AnimationTime.update();
+
+        final long t0 = System.nanoTime();
+
+        mRenderLock.lock();
+
+        while (mFreeze) {
+            mFreezeCondition.awaitUninterruptibly();
+        }
+
+        try {
+            onDrawFrameLocked(gl);
+        } finally {
+            mRenderLock.unlock();
+        }
+
+        if (DEBUG_SLOW) {
+            final long t = System.nanoTime();
+            final long durationInMs = (t - mLastDrawFinishTime) / 1000000;
+            final long durationDrawInMs = (t - t0) / 1000000;
+            mLastDrawFinishTime = t;
+
+            if (durationInMs > 34) {  // 34ms -> we skipped at least 2 frames
+                Log.v(LOG_TAG, "----- SLOW (" + durationDrawInMs + "/" +
+                        durationInMs + ") -----");
+            }
+        }
     }
 
     @Override
@@ -479,8 +570,6 @@ public class GLRootView extends GLSurfaceView
 
         // reset texture upload limit
         UploadedTexture.resetUploadLimit();
-
-        mRenderRequested = false;
 
         if ((mOrientationSource != null
                 && mDisplayRotation != mOrientationSource.getDisplayRotation())
