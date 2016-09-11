@@ -56,10 +56,10 @@ public abstract class GLActivity extends Activity implements GLRootView.Renderer
     public void onDrawFrame() {}
 
     @Override
-    public void onGLThreadStarts() {}
+    public void onGLThreadStart() {}
 
     @Override
-    public void onGLThreadExits() {}
+    public void onGLThreadExit() {}
 
     @Override
     public void onGLThreadPause() {}

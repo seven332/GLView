@@ -50,13 +50,13 @@ public class MainActivity extends GLActivity {
     }
 
     @Override
-    public void onGLThreadStarts() {
-        Log.d("TAG", "onGLThreadStarts");
+    public void onGLThreadStart() {
+        Log.d("TAG", "onGLThreadStart");
     }
 
     @Override
-    public void onGLThreadExits() {
-        Log.d("TAG", "onGLThreadExits");
+    public void onGLThreadExit() {
+        Log.d("TAG", "onGLThreadExit");
     }
 
     @Override

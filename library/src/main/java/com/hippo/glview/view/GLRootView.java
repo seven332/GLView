@@ -139,14 +139,14 @@ public class GLRootView extends GLSurfaceView
         void onDrawFrame();
 
         /**
-         * Called in the bottom of {@link Renderer#onGLThreadStarts()}
+         * Called in the bottom of {@link Renderer#onGLThreadStart()}
          */
-        void onGLThreadStarts();
+        void onGLThreadStart();
 
         /**
-         * Called in the bottom of {@link Renderer#onGLThreadExits()}
+         * Called in the bottom of {@link Renderer#onGLThreadExit()}
          */
-        void onGLThreadExits();
+        void onGLThreadExit();
 
         /**
          * Called in the bottom of {@link Renderer#onGLThreadPause()}
@@ -213,7 +213,7 @@ public class GLRootView extends GLSurfaceView
         }
 
         @Override
-        public void onDrawFrame(GL10 gl) {
+        public boolean onDrawFrame(GL10 gl) {
             final boolean drawRequested = mDrawRequested;
             mDrawRequested = false;
 
@@ -222,33 +222,39 @@ public class GLRootView extends GLSurfaceView
             }
 
             // Still render if not triggered by requestRender()
+            final boolean drew;
             if (!drawRequested || mRenderRequested) {
+                drew = true;
                 render(gl);
+            } else {
+                drew = false;
             }
 
             // Callback
             if (mRendererListener != null) {
                 mRendererListener.onDrawFrame();
             }
+
+            return drew;
         }
 
         @Override
-        public void onGLThreadStarts() {
+        public void onGLThreadStart() {
             // Callback
             if (mRendererListener != null) {
-                mRendererListener.onGLThreadStarts();
+                mRendererListener.onGLThreadStart();
             }
         }
 
         @Override
-        public void onGLThreadExits() {
+        public void onGLThreadExit() {
             if (mContentView != null && mContentView.isAttachedToRoot()) {
                 mContentView.detachFromRoot();
             }
 
             // Callback
             if (mRendererListener != null) {
-                mRendererListener.onGLThreadExits();
+                mRendererListener.onGLThreadExit();
             }
         }
 
