@@ -422,9 +422,6 @@ public class GLRootView extends GLSurfaceView
     }
 
     private void post(GL10 gl) {
-
-        Log.d("TAG", "Post");
-
         mPostRequested = false;
 
         final List<Handler> tempList = mTempHandlerList;
@@ -445,9 +442,6 @@ public class GLRootView extends GLSurfaceView
     }
 
     private void render(GL10 gl) {
-
-        Log.d("TAG", "Render");
-
         mRenderRequested = false;
 
         AnimationTime.update();
