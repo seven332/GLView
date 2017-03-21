@@ -36,7 +36,7 @@ import com.hippo.glview.glrenderer.GLES20Canvas;
 import com.hippo.glview.glrenderer.UploadedTexture;
 import com.hippo.glview.util.GalleryUtils;
 import com.hippo.glview.util.MotionEventHelper;
-import com.hippo.tuxiang.BestConfigChooser;
+import com.hippo.tuxiang.BaseConfigChooser;
 import com.hippo.tuxiang.GLSurfaceView;
 import com.hippo.tuxiang.Renderer;
 
@@ -48,7 +48,9 @@ import java.util.List;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
+import javax.microedition.khronos.egl.EGL10;
 import javax.microedition.khronos.egl.EGLConfig;
+import javax.microedition.khronos.egl.EGLDisplay;
 import javax.microedition.khronos.opengles.GL10;
 import javax.microedition.khronos.opengles.GL11;
 
@@ -300,7 +302,7 @@ public class GLRoot extends GLSurfaceView {
 
         final int eglContextClientVersion = 2;
         setEGLContextClientVersion(eglContextClientVersion);
-        setEGLConfigChooser(new BestConfigChooser(eglContextClientVersion));
+        setEGLConfigChooser(new ConfigChooser(eglContextClientVersion));
         getHolder().setFormat(PixelFormat.RGB_888);
 
         // Uncomment this to enable gl error check.
@@ -784,6 +786,61 @@ public class GLRoot extends GLSurfaceView {
             unfreeze();
         } finally {
             super.finalize();
+        }
+    }
+
+    // Always chose a config
+    private static class ConfigChooser extends BaseConfigChooser {
+
+        private final int[] mValue = new int[1];
+
+        public ConfigChooser(int eglContextClientVersion) {
+            super(eglContextClientVersion, new int[] {EGL10.EGL_NONE});
+        }
+
+        @Override
+        public EGLConfig chooseConfig(EGL10 egl, EGLDisplay display, EGLConfig[] configs) {
+            // Use score to avoid "No config chosen"
+            int configIndex = 0;
+            int maxScore = 0;
+
+            for (int i = 0, n = configs.length; i < n; i++) {
+                final EGLConfig config = configs[i];
+                final int redSize = findConfigAttrib(egl, display, config,
+                    EGL10.EGL_RED_SIZE, 0);
+                final int greenSize = findConfigAttrib(egl, display, config,
+                    EGL10.EGL_GREEN_SIZE, 0);
+                final int blueSize = findConfigAttrib(egl, display, config,
+                    EGL10.EGL_BLUE_SIZE, 0);
+                final int alphaSize = findConfigAttrib(egl, display, config,
+                    EGL10.EGL_ALPHA_SIZE, 0);
+                final int sampleBuffers = findConfigAttrib(egl, display, config,
+                    EGL10.EGL_SAMPLE_BUFFERS, 0);
+                final int samples = findConfigAttrib(egl, display, config,
+                    EGL10.EGL_SAMPLES, 0);
+                final int depth = findConfigAttrib(egl, display, config,
+                    EGL10.EGL_DEPTH_SIZE, 0);
+                final int stencil = findConfigAttrib(egl, display, config,
+                    EGL10.EGL_STENCIL_SIZE, 0);
+
+                final int score = redSize + greenSize + blueSize + alphaSize +
+                    sampleBuffers + samples - depth - stencil;
+
+                if (score > maxScore) {
+                    maxScore = score;
+                    configIndex = i;
+                }
+            }
+
+            return configs[configIndex];
+        }
+
+        private int findConfigAttrib(EGL10 egl, EGLDisplay display,
+            EGLConfig config, int attribute, int defaultValue) {
+            if (egl.eglGetConfigAttrib(display, config, attribute, mValue)) {
+                return mValue[0];
+            }
+            return defaultValue;
         }
     }
 }
