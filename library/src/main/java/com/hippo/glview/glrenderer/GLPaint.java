@@ -16,8 +16,6 @@
 
 package com.hippo.glview.glrenderer;
 
-import junit.framework.Assert;
-
 public class GLPaint {
     private float mLineWidth = 1f;
     private int mColor = 0;
@@ -40,7 +38,9 @@ public class GLPaint {
     }
 
     public void setLineWidth(float width) {
-        Assert.assertTrue(width >= 0);
+        if (width < 0) {
+            throw new IllegalArgumentException("width < 0");
+        }
         mLineWidth = width;
     }
 
