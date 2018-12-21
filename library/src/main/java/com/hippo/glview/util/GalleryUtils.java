@@ -17,8 +17,9 @@
 package com.hippo.glview.util;
 
 import android.graphics.Color;
-
 import com.hippo.yorozuya.AssertError;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class GalleryUtils {
 
@@ -40,19 +41,19 @@ public class GalleryUtils {
     // Below are used the detect using database in the render thread. It only
     // works most of the time, but that's ok because it's for debugging only.
 
-    private static volatile Thread sCurrentThread;
+    private static final List<Integer> sRenderThreads = new CopyOnWriteArrayList<>();
 
     public static void setRenderThread() {
-        sCurrentThread = Thread.currentThread();
+        sRenderThreads.add(Thread.currentThread().hashCode());
     }
 
     public static boolean isRenderThread() {
-        return sCurrentThread == Thread.currentThread();
+        return sRenderThreads.contains(Thread.currentThread().hashCode());
     }
 
     public static void assertInRenderThread() {
-        if (sCurrentThread != Thread.currentThread()) {
-            throw new AssertError("Should not do this in render thread");
+        if (!isRenderThread()) {
+            throw new AssertError("Should not do this in non-render thread");
         }
     }
 }
