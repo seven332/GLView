@@ -17,6 +17,7 @@
 package com.hippo.glview.glrenderer;
 
 import android.graphics.Bitmap;
+import android.graphics.ColorMatrix;
 import android.graphics.Rect;
 import android.graphics.RectF;
 
@@ -107,10 +108,15 @@ public interface GLCanvas {
     // Draws a texture to the specified rectangle.
     void drawTexture(BasicTexture texture, int x, int y, int width, int height);
 
+    void drawTexture(BasicTexture texture, int x, int y, int width, int height, ColorMatrix matrix);
+
     void drawMesh(BasicTexture tex, int x, int y, int xyBuffer, int uvBuffer, int indexBuffer, int indexCount);
 
     // Draws the source rectangle part of the texture to the target rectangle.
     void drawTexture(BasicTexture texture, RectF source, RectF target);
+
+    // Draws the source rectangle part of the texture to the target rectangle.
+    void drawTexture(BasicTexture texture, RectF source, RectF target, ColorMatrix matrix);
 
     // Draw a texture with a specified texture transform.
     void drawTexture(BasicTexture texture, float[] mTextureTransform, int x, int y, int w, int h);

@@ -17,6 +17,7 @@ package com.hippo.glview.glrenderer;
 
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.ColorMatrix;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.opengl.GLES20;
@@ -102,6 +103,8 @@ public class GLES20Canvas implements GLCanvas {
     private static final String TEXTURE_SAMPLER_UNIFORM = "uTextureSampler";
     private static final String ALPHA_UNIFORM = "uAlpha";
     private static final String TEXTURE_COORD_ATTRIBUTE = "aTextureCoordinate";
+    private static final String COLOR_PROPORTION_UNIFORM = "uColorProportion";
+    private static final String COLOR_OFFSET_UNIFORM = "uColorOffset";
 
     private static final String DRAW_VERTEX_SHADER = ""
             + "uniform mat4 " + MATRIX_UNIFORM + ";\n"
@@ -150,6 +153,20 @@ public class GLES20Canvas implements GLCanvas {
             + "  gl_FragColor *= " + ALPHA_UNIFORM + ";\n"
             + "}\n";
 
+    private static final String COLOR_MATRIX_TEXTURE_FRAGMENT_SHADER = ""
+            + "precision mediump float;\n"
+            + "varying vec2 vTextureCoord;\n"
+            + "uniform float " + ALPHA_UNIFORM + ";\n"
+            + "uniform sampler2D " + TEXTURE_SAMPLER_UNIFORM + ";\n"
+            + "uniform lowp mat4 " + COLOR_PROPORTION_UNIFORM + ";\n"
+            + "uniform lowp vec4 " + COLOR_OFFSET_UNIFORM + ";\n"
+            + "void main() {\n"
+            + "  gl_FragColor = texture2D(" + TEXTURE_SAMPLER_UNIFORM + ", vTextureCoord);\n"
+            + "  gl_FragColor *= " + COLOR_PROPORTION_UNIFORM + ";\n"
+            + "  gl_FragColor += " + COLOR_OFFSET_UNIFORM + ";\n"
+            + "  gl_FragColor *= " + ALPHA_UNIFORM + ";\n"
+            + "}\n";
+
     private static final int INITIAL_RESTORE_STATE_SIZE = 8;
     private static final int MATRIX_SIZE = 16;
 
@@ -175,6 +192,7 @@ public class GLES20Canvas implements GLCanvas {
     // GL programs
     private final int mDrawProgram;
     private final int mTextureProgram;
+    private final int mColorMatrixTextureProgram;
     private final int mMeshProgram;
 
     // GL buffer containing BOX_COORDINATES
@@ -191,6 +209,10 @@ public class GLES20Canvas implements GLCanvas {
     private static final int INDEX_TEXTURE_MATRIX = 2;
     private static final int INDEX_TEXTURE_SAMPLER = 3;
     private static final int INDEX_ALPHA = 4;
+
+    // Handle indices -- color matrix
+    private static final int INDEX_COLOR_PROPORTION = 5;
+    private static final int INDEX_COLOR_OFFSET = 6;
 
     // Handle indices -- mesh
     private static final int INDEX_TEXTURE_COORD = 2;
@@ -242,6 +264,15 @@ public class GLES20Canvas implements GLCanvas {
             new UniformShaderParameter(TEXTURE_SAMPLER_UNIFORM), // INDEX_TEXTURE_SAMPLER
             new UniformShaderParameter(ALPHA_UNIFORM), // INDEX_ALPHA
     };
+    ShaderParameter[] mColorMatrixTextureParameters = {
+            new AttributeShaderParameter(POSITION_ATTRIBUTE), // INDEX_POSITION
+            new UniformShaderParameter(MATRIX_UNIFORM), // INDEX_MATRIX
+            new UniformShaderParameter(TEXTURE_MATRIX_UNIFORM), // INDEX_TEXTURE_MATRIX
+            new UniformShaderParameter(TEXTURE_SAMPLER_UNIFORM), // INDEX_TEXTURE_SAMPLER
+            new UniformShaderParameter(ALPHA_UNIFORM), // INDEX_ALPHA
+            new UniformShaderParameter(COLOR_PROPORTION_UNIFORM), // INDEX_COLOR_PROPORTION
+            new UniformShaderParameter(COLOR_OFFSET_UNIFORM), // INDEX_OFFSET_PROPORTION
+    };
     ShaderParameter[] mMeshParameters = {
             new AttributeShaderParameter(POSITION_ATTRIBUTE), // INDEX_POSITION
             new UniformShaderParameter(MATRIX_UNIFORM), // INDEX_MATRIX
@@ -273,6 +304,8 @@ public class GLES20Canvas implements GLCanvas {
     private final RectF mTempTargetRect = new RectF();
     private final float[] mTempTextureMatrix = new float[MATRIX_SIZE];
     private final int[] mTempIntArray = new int[1];
+    private final float[] mTempColorProportion = new float[16];
+    private final float[] mTempColorOffset = new float[4];
 
     private static final GLId mGLId = new GLES20IdImpl();
 
@@ -290,11 +323,16 @@ public class GLES20Canvas implements GLCanvas {
         int meshVertexShader = loadShader(GLES20.GL_VERTEX_SHADER, MESH_VERTEX_SHADER);
         int drawFragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, DRAW_FRAGMENT_SHADER);
         int textureFragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, TEXTURE_FRAGMENT_SHADER);
+        int colorMatrixTextureFragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER,
+                COLOR_MATRIX_TEXTURE_FRAGMENT_SHADER);
 
         mDrawProgram = assembleProgram(drawVertexShader, drawFragmentShader, mDrawParameters);
         mTextureProgram = assembleProgram(textureVertexShader, textureFragmentShader,
                 mTextureParameters);
+        mColorMatrixTextureProgram = assembleProgram(textureVertexShader,
+                colorMatrixTextureFragmentShader, mColorMatrixTextureParameters);
         mMeshProgram = assembleProgram(meshVertexShader, textureFragmentShader, mMeshParameters);
+
         GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA);
         checkError();
     }
@@ -622,13 +660,18 @@ public class GLES20Canvas implements GLCanvas {
 
     @Override
     public void drawTexture(BasicTexture texture, int x, int y, int width, int height) {
+        drawTexture(texture, x, y, width, height, null);
+    }
+
+    @Override
+    public void drawTexture(BasicTexture texture, int x, int y, int width, int height, ColorMatrix matrix) {
         if (width <= 0 || height <= 0) {
             return;
         }
         copyTextureCoordinates(texture, mTempSourceRect);
         mTempTargetRect.set(x, y, x + width, y + height);
         convertCoordinate(mTempSourceRect, mTempTargetRect, texture);
-        drawTextureRect(texture, mTempSourceRect, mTempTargetRect);
+        drawTextureRect(texture, mTempSourceRect, mTempTargetRect, matrix);
     }
 
     private static void copyTextureCoordinates(BasicTexture texture, RectF outRect) {
@@ -647,6 +690,11 @@ public class GLES20Canvas implements GLCanvas {
 
     @Override
     public void drawTexture(BasicTexture texture, RectF source, RectF target) {
+        drawTexture(texture, source, target, null);
+    }
+
+    @Override
+    public void drawTexture(BasicTexture texture, RectF source, RectF target, ColorMatrix matrix) {
         if (target.width() <= 0 || target.height() <= 0) {
             return;
         }
@@ -654,7 +702,7 @@ public class GLES20Canvas implements GLCanvas {
         mTempTargetRect.set(target);
 
         convertCoordinate(mTempSourceRect, mTempTargetRect, texture);
-        drawTextureRect(texture, mTempSourceRect, mTempTargetRect);
+        drawTextureRect(texture, mTempSourceRect, mTempTargetRect, matrix);
     }
 
     @Override
@@ -664,12 +712,12 @@ public class GLES20Canvas implements GLCanvas {
             return;
         }
         mTempTargetRect.set(x, y, x + w, y + h);
-        drawTextureRect(texture, textureTransform, mTempTargetRect);
+        drawTextureRect(texture, textureTransform, mTempTargetRect, null);
     }
 
-    private void drawTextureRect(BasicTexture texture, RectF source, RectF target) {
+    private void drawTextureRect(BasicTexture texture, RectF source, RectF target, ColorMatrix matrix) {
         setTextureMatrix(source);
-        drawTextureRect(texture, mTempTextureMatrix, target);
+        drawTextureRect(texture, mTempTextureMatrix, target, matrix);
     }
 
     private void setTextureMatrix(RectF source) {
@@ -706,10 +754,37 @@ public class GLES20Canvas implements GLCanvas {
         }
     }
 
-    private void drawTextureRect(BasicTexture texture, float[] textureMatrix, RectF target) {
-        ShaderParameter[] params = mTextureParameters;
-        prepareTexture(texture, mTextureProgram, params);
+    private void setColorMatrix(ShaderParameter[] params, ColorMatrix matrix) {
+        float[] array = matrix.getArray();
+        for (int i = 0; i < 4; i++) {
+            System.arraycopy(array, 5 * i, mTempColorProportion, 4 * i, 4);
+        }
+        mTempColorOffset[0] = array[4];
+        mTempColorOffset[1] = array[9];
+        mTempColorOffset[2] = array[14];
+        mTempColorOffset[3] = array[19];
+
+        GLES20.glUniformMatrix4fv(params[INDEX_COLOR_PROPORTION].handle, 1, false, mTempColorProportion, 0);
+        checkError();
+        GLES20.glUniform4fv(params[INDEX_COLOR_OFFSET].handle, 1, mTempColorOffset, 0);
+        checkError();
+    }
+
+    private void drawTextureRect(BasicTexture texture, float[] textureMatrix, RectF target, ColorMatrix matrix) {
+        int program;
+        ShaderParameter[] params;
+        if (matrix == null) {
+            program = mTextureProgram;
+            params = mTextureParameters;
+        } else {
+            program = mColorMatrixTextureProgram;
+            params = mColorMatrixTextureParameters;
+        }
+        prepareTexture(texture, program, params);
         setPosition(params, OFFSET_FILL_RECT);
+        if (matrix != null) {
+            setColorMatrix(params, matrix);
+        }
         GLES20.glUniformMatrix4fv(params[INDEX_TEXTURE_MATRIX].handle, 1, false, textureMatrix, 0);
         checkError();
         if (texture.isFlippedVertically()) {
