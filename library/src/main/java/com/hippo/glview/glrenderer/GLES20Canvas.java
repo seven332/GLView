@@ -150,17 +150,6 @@ public class GLES20Canvas implements GLCanvas {
             + "  gl_FragColor *= " + ALPHA_UNIFORM + ";\n"
             + "}\n";
 
-    private static final String OES_TEXTURE_FRAGMENT_SHADER = ""
-            + "#extension GL_OES_EGL_image_external : require\n"
-            + "precision mediump float;\n"
-            + "varying vec2 vTextureCoord;\n"
-            + "uniform float " + ALPHA_UNIFORM + ";\n"
-            + "uniform samplerExternalOES " + TEXTURE_SAMPLER_UNIFORM + ";\n"
-            + "void main() {\n"
-            + "  gl_FragColor = texture2D(" + TEXTURE_SAMPLER_UNIFORM + ", vTextureCoord);\n"
-            + "  gl_FragColor *= " + ALPHA_UNIFORM + ";\n"
-            + "}\n";
-
     private static final int INITIAL_RESTORE_STATE_SIZE = 8;
     private static final int MATRIX_SIZE = 16;
 
@@ -186,7 +175,6 @@ public class GLES20Canvas implements GLCanvas {
     // GL programs
     private final int mDrawProgram;
     private final int mTextureProgram;
-    private final int mOesTextureProgram;
     private final int mMeshProgram;
 
     // GL buffer containing BOX_COORDINATES
@@ -254,13 +242,6 @@ public class GLES20Canvas implements GLCanvas {
             new UniformShaderParameter(TEXTURE_SAMPLER_UNIFORM), // INDEX_TEXTURE_SAMPLER
             new UniformShaderParameter(ALPHA_UNIFORM), // INDEX_ALPHA
     };
-    ShaderParameter[] mOesTextureParameters = {
-            new AttributeShaderParameter(POSITION_ATTRIBUTE), // INDEX_POSITION
-            new UniformShaderParameter(MATRIX_UNIFORM), // INDEX_MATRIX
-            new UniformShaderParameter(TEXTURE_MATRIX_UNIFORM), // INDEX_TEXTURE_MATRIX
-            new UniformShaderParameter(TEXTURE_SAMPLER_UNIFORM), // INDEX_TEXTURE_SAMPLER
-            new UniformShaderParameter(ALPHA_UNIFORM), // INDEX_ALPHA
-    };
     ShaderParameter[] mMeshParameters = {
             new AttributeShaderParameter(POSITION_ATTRIBUTE), // INDEX_POSITION
             new UniformShaderParameter(MATRIX_UNIFORM), // INDEX_MATRIX
@@ -309,14 +290,10 @@ public class GLES20Canvas implements GLCanvas {
         int meshVertexShader = loadShader(GLES20.GL_VERTEX_SHADER, MESH_VERTEX_SHADER);
         int drawFragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, DRAW_FRAGMENT_SHADER);
         int textureFragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, TEXTURE_FRAGMENT_SHADER);
-        int oesTextureFragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER,
-                OES_TEXTURE_FRAGMENT_SHADER);
 
         mDrawProgram = assembleProgram(drawVertexShader, drawFragmentShader, mDrawParameters);
         mTextureProgram = assembleProgram(textureVertexShader, textureFragmentShader,
                 mTextureParameters);
-        mOesTextureProgram = assembleProgram(textureVertexShader, oesTextureFragmentShader,
-                mOesTextureParameters);
         mMeshProgram = assembleProgram(meshVertexShader, textureFragmentShader, mMeshParameters);
         GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA);
         checkError();
@@ -730,7 +707,8 @@ public class GLES20Canvas implements GLCanvas {
     }
 
     private void drawTextureRect(BasicTexture texture, float[] textureMatrix, RectF target) {
-        ShaderParameter[] params = prepareTexture(texture);
+        ShaderParameter[] params = mTextureParameters;
+        prepareTexture(texture, mTextureProgram, params);
         setPosition(params, OFFSET_FILL_RECT);
         GLES20.glUniformMatrix4fv(params[INDEX_TEXTURE_MATRIX].handle, 1, false, textureMatrix, 0);
         checkError();
@@ -746,20 +724,6 @@ public class GLES20Canvas implements GLCanvas {
             restore();
         }
         mCountTextureRect++;
-    }
-
-    private ShaderParameter[] prepareTexture(BasicTexture texture) {
-        ShaderParameter[] params;
-        int program;
-        if (texture.getTarget() == GLES20.GL_TEXTURE_2D) {
-            params = mTextureParameters;
-            program = mTextureProgram;
-        } else {
-            params = mOesTextureParameters;
-            program = mOesTextureProgram;
-        }
-        prepareTexture(texture, program, params);
-        return params;
     }
 
     private void prepareTexture(BasicTexture texture, int program, ShaderParameter[] params) {
