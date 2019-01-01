@@ -148,8 +148,13 @@ public class GLES20Canvas implements GLCanvas {
             + "varying vec2 vTextureCoord;\n"
             + "uniform float " + ALPHA_UNIFORM + ";\n"
             + "uniform sampler2D " + TEXTURE_SAMPLER_UNIFORM + ";\n"
+            + "vec3 minBound = vec3(0.588, 0.588, 0.588);\n"
+            + "vec3 maxBound = vec3(0.686, 0.686, 0.686);\n"
             + "void main() {\n"
             + "  gl_FragColor = texture2D(" + TEXTURE_SAMPLER_UNIFORM + ", vTextureCoord);\n"
+            + "  if (all(greaterThan(gl_FragColor.rgb, minBound)) && all(lessThan(gl_FragColor.rgb, maxBound))) {\n"
+            + "    gl_FragColor.r += 0.294;\n"
+            + "  }\n"
             + "  gl_FragColor *= " + ALPHA_UNIFORM + ";\n"
             + "}\n";
 
@@ -160,10 +165,15 @@ public class GLES20Canvas implements GLCanvas {
             + "uniform sampler2D " + TEXTURE_SAMPLER_UNIFORM + ";\n"
             + "uniform lowp mat4 " + COLOR_PROPORTION_UNIFORM + ";\n"
             + "uniform lowp vec4 " + COLOR_OFFSET_UNIFORM + ";\n"
+            + "vec3 minBound = vec3(0.588, 0.588, 0.588);\n"
+            + "vec3 maxBound = vec3(0.686, 0.686, 0.686);\n"
             + "void main() {\n"
             + "  gl_FragColor = texture2D(" + TEXTURE_SAMPLER_UNIFORM + ", vTextureCoord);\n"
             + "  gl_FragColor *= " + COLOR_PROPORTION_UNIFORM + ";\n"
             + "  gl_FragColor += " + COLOR_OFFSET_UNIFORM + ";\n"
+            + "  if (all(greaterThan(gl_FragColor.rgb, minBound)) && all(lessThan(gl_FragColor.rgb, maxBound))) {\n"
+            + "    gl_FragColor.r += 0.294;\n"
+            + "  }\n"
             + "  gl_FragColor *= " + ALPHA_UNIFORM + ";\n"
             + "}\n";
 
