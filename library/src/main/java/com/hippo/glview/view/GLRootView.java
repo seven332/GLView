@@ -20,6 +20,7 @@ import android.annotation.TargetApi;
 import android.content.Context;
 import android.graphics.Matrix;
 import android.graphics.PixelFormat;
+import android.opengl.GLUtils;
 import android.os.Build;
 import android.os.Parcelable;
 import android.os.Process;
@@ -30,27 +31,27 @@ import android.util.Log;
 import android.util.SparseArray;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
-
 import com.hippo.glview.anim.CanvasAnimation;
 import com.hippo.glview.glrenderer.BasicTexture;
 import com.hippo.glview.glrenderer.GLCanvas;
+import com.hippo.glview.glrenderer.GLES11Canvas;
 import com.hippo.glview.glrenderer.GLES20Canvas;
 import com.hippo.glview.glrenderer.UploadedTexture;
 import com.hippo.glview.util.ApiHelper;
 import com.hippo.glview.util.GalleryUtils;
 import com.hippo.glview.util.MotionEventHelper;
-import com.hippo.tuxiang.BaseConfigChooser;
+import com.hippo.tuxiang.EGLConfigChooser;
+import com.hippo.tuxiang.EGLContextFactory;
 import com.hippo.tuxiang.GLSurfaceView;
 import com.hippo.tuxiang.Renderer;
 import com.hippo.yorozuya.AssertUtils;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
-
 import javax.microedition.khronos.egl.EGL10;
 import javax.microedition.khronos.egl.EGLConfig;
+import javax.microedition.khronos.egl.EGLContext;
 import javax.microedition.khronos.egl.EGLDisplay;
 import javax.microedition.khronos.opengles.GL10;
 import javax.microedition.khronos.opengles.GL11;
@@ -111,6 +112,8 @@ public class GLRootView extends GLSurfaceView
 
     private boolean mInDownState = false;
 
+    private int mEGLContextClientVersion;
+
     private class GLRootRenderer implements Renderer {
 
         /**
@@ -126,7 +129,7 @@ public class GLRootView extends GLSurfaceView
             mRenderLock.lock();
             try {
                 mGL = gl;
-                mCanvas = new GLES20Canvas();
+                mCanvas = mEGLContextClientVersion == 2 ? new GLES20Canvas() : new GLES11Canvas(gl);
                 BasicTexture.invalidateAllTextures();
             } finally {
                 mRenderLock.unlock();
@@ -212,9 +215,8 @@ public class GLRootView extends GLSurfaceView
         mFlags |= FLAG_INITIALIZED;
         setBackgroundDrawable(null);
 
-        final int eglContextClientVersion = 2;
-        setEGLContextClientVersion(eglContextClientVersion);
-        setEGLConfigChooser(new ConfigChooser(eglContextClientVersion));
+        setEGLConfigChooser(new ConfigChooser());
+        setEGLContextFactory(new ContextFactory());
         setRenderer(new GLRootRenderer());
         getHolder().setFormat(PixelFormat.RGB_888);
 
@@ -635,16 +637,45 @@ public class GLRootView extends GLSurfaceView
     }
 
     // Always chose a config
-    private static class ConfigChooser extends BaseConfigChooser {
+    private class ConfigChooser implements EGLConfigChooser {
 
         private final int[] mValue = new int[1];
 
-        public ConfigChooser(int eglContextClientVersion) {
-            super(eglContextClientVersion, new int[] {EGL10.EGL_NONE});
+        @Override
+        public EGLConfig chooseConfig(EGL10 egl, EGLDisplay display) {
+            int[] num_config = new int[1];
+            int[] configSpec = new int[] { EGL10.EGL_NONE };
+            if (!egl.eglChooseConfig(display, configSpec, null, 0, num_config)) {
+                throw new IllegalArgumentException("eglChooseConfig failed");
+            }
+
+            int numConfigs = num_config[0];
+
+            if (numConfigs <= 0) {
+                throw new IllegalArgumentException(
+                    "No configs match configSpec");
+            }
+
+            EGLConfig[] configs = new EGLConfig[numConfigs];
+            if (!egl.eglChooseConfig(display, configSpec, configs, numConfigs, num_config)) {
+                throw new IllegalArgumentException("eglChooseConfig#2 failed");
+            }
+            EGLConfig config = chooseConfig(egl, display, configs);
+            if (config == null) {
+                throw new IllegalArgumentException("No config chosen");
+            }
+
+            int renderableType = findConfigAttrib(egl, display, config, EGL10.EGL_RENDERABLE_TYPE, 0);
+            if ((renderableType & 0x0004) == 0x0004 /* EGL_OPENGL_ES2_BIT */) {
+                mEGLContextClientVersion = 2;
+            } else {
+                mEGLContextClientVersion = 1;
+            }
+
+            return config;
         }
 
-        @Override
-        public EGLConfig chooseConfig(EGL10 egl, EGLDisplay display, EGLConfig[] configs) {
+        private EGLConfig chooseConfig(EGL10 egl, EGLDisplay display, EGLConfig[] configs) {
             // Use score to avoid "No config chosen"
             int configIndex = 0;
             int maxScore = 0;
@@ -686,6 +717,28 @@ public class GLRootView extends GLSurfaceView
                 return mValue[0];
             }
             return defaultValue;
+        }
+    }
+
+    private class ContextFactory implements EGLContextFactory {
+
+        private static final int EGL_CONTEXT_CLIENT_VERSION = 0x3098;
+
+        @Override
+        public EGLContext createContext(EGL10 egl, EGLDisplay display, EGLConfig config) {
+            int[] attrib_list = {EGL_CONTEXT_CLIENT_VERSION, mEGLContextClientVersion,
+                    EGL10.EGL_NONE };
+
+            return egl.eglCreateContext(display, config, EGL10.EGL_NO_CONTEXT,
+                    mEGLContextClientVersion != 0 ? attrib_list : null);
+        }
+
+        @Override
+        public void destroyContext(EGL10 egl, EGLDisplay display, EGLContext context) {
+            if (!egl.eglDestroyContext(display, context)) {
+                Log.e("DefaultContextFactory", "display:" + display + " context: " + context);
+                throw new RuntimeException("eglDestroyContex failed: " + GLUtils.getEGLErrorString(egl.eglGetError()));
+            }
         }
     }
 }
