@@ -18,7 +18,6 @@ package com.hippo.glview.glrenderer;
 
 import android.graphics.Bitmap;
 import android.graphics.Color;
-import android.graphics.ColorMatrix;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.opengl.GLU;
@@ -454,13 +453,6 @@ public class GLES11Canvas implements GLCanvas {
 
     @Override
     public void drawTexture(
-            BasicTexture texture, int x, int y, int width, int height, ColorMatrix matrix) {
-        // TODO It's unimplemented
-        drawTexture(texture, x, y, width, height);
-    }
-
-    @Override
-    public void drawTexture(
             BasicTexture texture, int x, int y, int width, int height) {
         drawTexture(texture, x, y, width, height, mAlpha);
     }
@@ -474,12 +466,6 @@ public class GLES11Canvas implements GLCanvas {
         if (!bindTexture(texture)) return;
         mGLState.setTextureAlpha(alpha);
         drawBoundTexture(texture, x, y, width, height);
-    }
-
-    @Override
-    public void drawTexture(BasicTexture texture, RectF source, RectF target, ColorMatrix matrix) {
-        // TODO It's unimplemented
-        drawTexture(texture, source, target);
     }
 
     @Override
