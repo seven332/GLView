@@ -21,7 +21,7 @@ android {
 
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])
-    compile 'com.github.seven332:tuxiang:0.1.2'
+    compile 'com.github.seven332:tuxiang:0.1.6'
     compile 'com.github.seven332:yorozuya:0.1.2'
     compile 'com.github.seven332:yorozuya-thread:0.1.1'
     compile 'com.github.seven332:yorozuya-collect:0.1.4'

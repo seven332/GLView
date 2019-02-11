@@ -158,7 +158,7 @@ public class GLRootView extends GLSurfaceView
         }
 
         @Override
-        public void onDrawFrame(GL10 gl) {
+        public boolean onDrawFrame(GL10 gl) {
             AnimationTime.update();
 
             long t0 = System.nanoTime();
@@ -181,24 +181,29 @@ public class GLRootView extends GLSurfaceView
             if (duration > 8) {
                 Log.v(TAG, "--- " + duration + " ---");
             }
+
+            return true;
         }
 
         @Override
-        public void onSurfaceDestroyed() {
+        public void onGLThreadStart() { }
+
+        @Override
+        public void onGLThreadExit() {
             if (mContentView != null && mContentView.isAttachedToRoot()) {
                 mContentView.detachFromRoot();
             }
         }
 
         @Override
-        public void onPause() {
+        public void onGLThreadPause() {
             if (mContentView != null) {
                 mContentView.pause();
             }
         }
 
         @Override
-        public void onResume() {
+        public void onGLThreadResume() {
             if (mContentView != null) {
                 mContentView.resume();
             }
